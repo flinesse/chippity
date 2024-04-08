@@ -1,3 +1,5 @@
+use crate::instruction::Instruction;
+
 //    CHIP-8 Virtual Machine memory layout:
 //    +-----------------------------------+= 0xFFF (4095) End of CHIP-8 RAM
 //    |                                   |
@@ -33,6 +35,7 @@ const RAM_START: u16 = 0x000; // Starting addr of RAM
 const ROM_START: u16 = 0x200; // Starting addr of CHIP-8 programs
 const STACK_SIZE: usize = 12;
 const NUM_DATA_REGS: usize = 16;
+const PC_STEP: u16 = 2; // mem::size_of::<Instruction>() / chip8_addressable_unit = 2
 
 // Pre-defined "static" font data that will occupy memory reserved for the interpreter (<0x200)
 const FONT_SPRITES: [[u8; 5]; 16] = [
@@ -63,8 +66,6 @@ pub struct Chip8 {
     // Program Counter
     pc: u16,
     // CHIP-8 call stack; its only purpose is to push/pop any callers' return address
-    //   The original RCA 1802 version allowed up to 12 levels of
-    //   nesting; modern implementations may wish to allocate more
     stack: Vec<u16>,
     // Stack Pointer
     sp: u16,
@@ -99,6 +100,8 @@ impl Chip8 {
         let mut emu = Chip8 {
             memory: [0; RAM_SIZE],
             pc: ROM_START,
+            // The original RCA 1802 version allowed up to 12 levels of nesting
+            // _Modern implementations may wish to allocate more_
             stack: Vec::with_capacity(STACK_SIZE),
             sp: 0,
             i_reg: 0,
@@ -125,7 +128,24 @@ impl Chip8 {
         self.memory[start..end].copy_from_slice(data);
     }
 
-    pub fn run(&self) {
+    pub fn fetch_instruction(&mut self) -> Instruction {
+        // Program Counter is monotonically increasing starting at 0x200;
+        // it is up to the ROM to ensure that the PC remains within valid bounds
+        // if self.pc < ROM_START || self.pc >= (RAM_SIZE as u16) {
+        //     panic!("Bad ROM!!")
+        // }
+
+        // CHIP-8 instructions are stored big-endian
+        let hb = self.memory[self.pc as usize];
+        let lb = self.memory[(self.pc + 1) as usize];
+        // Instruction (`modular_bitfield::bitfield`) is constructed lsb -> msb
+        let instr = Instruction::from_bytes([lb, hb]);
+        self.pc += PC_STEP;
+
+        instr
+    }
+
+    pub fn exec_instruction(&mut self, instr: Instruction) {
         todo!()
     }
 }
