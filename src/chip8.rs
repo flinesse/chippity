@@ -129,7 +129,7 @@ impl Chip8 {
     }
 
     pub fn fetch_instruction(&mut self) -> Instruction {
-        // Program Counter is monotonically increasing starting at 0x200;
+        // Program Counter monotonically increases starting at 0x200;
         // it is up to the ROM to ensure that the PC remains within valid bounds
         // if self.pc < ROM_START || self.pc >= (RAM_SIZE as u16) {
         //     panic!("Bad ROM!!")
@@ -146,6 +146,111 @@ impl Chip8 {
     }
 
     pub fn exec_instruction(&mut self, instr: Instruction) {
-        todo!()
+        let (o, x, y, n) = (instr.get_o(), instr.get_x(), instr.get_y(), instr.get_n());
+
+        // Decode and excute instruction
+        match (o, x, y, n) {
+            // 00E0 - CLRS
+            (0x0, 0x0, 0xE, 0x0) => {
+                self.display.fill(false);
+            }
+            // 00EE - RET
+            (0x0, 0x0, 0xE, 0xE) => {
+                let ret_addr = self.stack.pop().expect(""); // TODO
+                self.pc = ret_addr;
+            }
+            // 0NNN - SYSC addr (Ignored by modern interpreters)
+            (0x0, _n1, _n2, _n3) => {
+                eprintln!(""); // TODO
+            }
+            // 1NNN - JMP addr
+            (0x1, _n1, _n2, _n3) => {
+                let addr = instr.get_nnn();
+                self.pc = addr;
+            }
+            // 2NNN - CALL addr
+            (0x2, _n1, _n2, _n3) => {
+                let addr = instr.get_nnn();
+                self.stack.push(self.pc);
+                self.pc = addr;
+            }
+            // 3XNN - SKE Vx, byte
+            (0x3, _x, _n2, _n3) => {
+                if self.v_reg[instr.get_x() as usize] == instr.get_nn() {
+                    self.pc += PC_STEP;
+                }
+            }
+            // 4XNN - SKNE Vx, byte
+            (0x4, _x, _n2, _n3) => {
+                if self.v_reg[instr.get_x() as usize] != instr.get_nn() {
+                    self.pc += PC_STEP;
+                }
+            }
+            // 5XY0 - SKE Vx, Vy
+            (0x5, _x, _y, 0x0) => {
+                if self.v_reg[instr.get_x() as usize] == self.v_reg[instr.get_y() as usize] {
+                    self.pc += PC_STEP;
+                }
+            }
+            // 6XNN - LD Vx, byte
+            (0x6, _x, _n2, _n3) => {
+                self.v_reg[instr.get_x() as usize] = instr.get_nn();
+            }
+            // 7XNN - ADD Vx, byte
+            (0x7, _x, _n2, _n3) => {
+                self.v_reg[instr.get_x() as usize] += instr.get_nn();
+            }
+            // 8XY0 - LD Vx, Vy
+            (0x8, _x, _y, 0x0) => todo!(),
+            // 8XY1 - OR Vx, Vy
+            (0x8, _x, _y, 0x1) => todo!(),
+            // 8XY2 - AND Vx, Vy
+            (0x8, _x, _y, 0x2) => todo!(),
+            // 8XY3 - XOR Vx, Vy
+            (0x8, _x, _y, 0x3) => todo!(),
+            // 8XY4 - ADD Vx, Vy
+            (0x8, _x, _y, 0x4) => todo!(),
+            // 8XY5 - SUB Vx, Vy
+            (0x8, _x, _y, 0x5) => todo!(),
+            // 8XY6 - SHR Vx {, Vy}
+            (0x8, _x, _y, 0x6) => todo!(),
+            // 8XY7 - SUBN Vx, Vy
+            (0x8, _x, _y, 0x7) => todo!(),
+            // 8XYE - SHL Vx {, Vy}
+            (0x8, _x, _y, 0xE) => todo!(),
+            // 9XY0 - SNE Vx, Vy
+            (0x9, _x, _y, 0x0) => todo!(),
+            // ANNN - LD I, addr
+            (0xA, _n1, _n2, _n3) => todo!(),
+            // BNNN - JP V0, addr
+            (0xB, _n1, _n2, _n3) => todo!(),
+            // CXNN - RND Vx, byte
+            (0xC, _x, _n2, _n3) => todo!(),
+            // DXYN - DRW Vx, Vy, nibble
+            (0xD, _x, _y, _n3) => todo!(),
+            // EX9E - SKP Vx
+            (0xE, _x, 0x9, 0xE) => todo!(),
+            // EXA1 - SKNP Vx
+            (0xE, _x, 0xA, 0x1) => todo!(),
+            // FX07 - LD Vx, DT
+            (0xF, _x, 0x0, 0x7) => todo!(),
+            // FX0A - LD Vx, K
+            (0xF, _x, 0x0, 0xA) => todo!(),
+            // FX15 - LD DT, Vx
+            (0xF, _x, 0x1, 0x5) => todo!(),
+            // FX18 - LD ST, Vx
+            (0xF, _x, 0x1, 0x8) => todo!(),
+            // FX1E - ADD I, Vx
+            (0xF, _x, 0x1, 0xE) => todo!(),
+            // FX29 - LD F, Vx
+            (0xF, _x, 0x2, 0x9) => todo!(),
+            // FX33 - LD B, Vx
+            (0xF, _x, 0x3, 0x3) => todo!(),
+            // FX55 - LD [I], Vx
+            (0xF, _x, 0x5, 0x5) => todo!(),
+            // FX65 - LD Vx, [I]
+            (0xF, _x, 0x6, 0x5) => todo!(),
+            (_, _, _, _) => panic!(),
+        }
     }
 }
