@@ -30,7 +30,7 @@ impl Instruction {
         self.n0()
     }
 
-    // nnn - Memory address of CHIP-8 VM (4096 = 2^12); lowest 12 bits of instruction
+    // nnn - For memory addressing CHIP-8 VM (4096 = 2^12); lowest 12 bits of instruction
     pub fn get_nnn(&self) -> u16 {
         (self.n1() as u16) << 8 | (self.n2() as u16) << 4 | (self.n3() as u16)
     }

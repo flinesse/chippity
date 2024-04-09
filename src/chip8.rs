@@ -38,7 +38,7 @@ const NUM_DATA_REGS: usize = 16;
 const PC_STEP: u16 = 2; // mem::size_of::<Instruction>() / chip8_addressable_unit = 2
 
 // Pre-defined "static" font data that will occupy memory reserved for the interpreter (<0x200)
-const FONT_SPRITES: [[u8; 5]; 16] = [
+pub const FONT_SPRITES: [[u8; FONT_PX_HEIGHT]; 16] = [
     [0xF0, 0x90, 0x90, 0x90, 0xF0], // 0
     [0x20, 0x60, 0x20, 0x20, 0x70], // 1
     [0xF0, 0x10, 0xF0, 0x80, 0xF0], // 2
@@ -56,6 +56,7 @@ const FONT_SPRITES: [[u8; 5]; 16] = [
     [0xF0, 0x80, 0xF0, 0x80, 0xF0], // E
     [0xF0, 0x80, 0xF0, 0x80, 0x80], // F
 ];
+const FONT_PX_HEIGHT: usize = 5;
 
 const DISPLAY_WIDTH: usize = 64;
 const DISPLAY_HEIGHT: usize = 32;
@@ -267,32 +268,73 @@ impl Chip8 {
                 let addr = instr.get_nnn();
                 self.pc = addr + (self.v_reg[0x0] as u16);
             }
-            // CXNN - RND Vx, byte
-            (0xC, _x, _n2, _n3) => todo!(),
-            // DXYN - DRW Vx, Vy, nibble
+            // CXNN - RAND Vx, byte
+            (0xC, _x, _n2, _n3) => {
+                self.v_reg[instr.get_x() as usize] = fastrand::u8(..) & instr.get_nn();
+            }
+            // DXYN - DRAW Vx, Vy, nibble
             (0xD, _x, _y, _n3) => todo!(),
             // EX9E - SKP Vx
             (0xE, _x, 0x9, 0xE) => todo!(),
             // EXA1 - SKNP Vx
             (0xE, _x, 0xA, 0x1) => todo!(),
             // FX07 - LD Vx, DT
-            (0xF, _x, 0x0, 0x7) => todo!(),
+            (0xF, _x, 0x0, 0x7) => {
+                self.v_reg[instr.get_x() as usize] = self.delay_timer;
+            }
             // FX0A - LD Vx, K
             (0xF, _x, 0x0, 0xA) => todo!(),
             // FX15 - LD DT, Vx
-            (0xF, _x, 0x1, 0x5) => todo!(),
+            (0xF, _x, 0x1, 0x5) => {
+                self.delay_timer = self.v_reg[instr.get_x() as usize];
+            }
             // FX18 - LD ST, Vx
-            (0xF, _x, 0x1, 0x8) => todo!(),
+            (0xF, _x, 0x1, 0x8) => {
+                self.sound_timer = self.v_reg[instr.get_x() as usize];
+            }
             // FX1E - ADD I, Vx
-            (0xF, _x, 0x1, 0xE) => todo!(),
-            // FX29 - LD F, Vx
-            (0xF, _x, 0x2, 0x9) => todo!(),
-            // FX33 - LD B, Vx
-            (0xF, _x, 0x3, 0x3) => todo!(),
-            // FX55 - LD [I], Vx
-            (0xF, _x, 0x5, 0x5) => todo!(),
+            (0xF, _x, 0x1, 0xE) => {
+                let vx = self.v_reg[instr.get_x() as usize];
+                self.i_reg = self.i_reg.wrapping_add(vx as u16);
+            }
+            // FX29 - LEA I, F(Vx)
+            (0xF, _x, 0x2, 0x9) => {
+                let vx = self.v_reg[instr.get_x() as usize];
+                // Address for font sprite representing hex digit '{Vx}' = Vx * bytes_per_font_sprite
+                self.i_reg = (vx as u16) * (FONT_PX_HEIGHT as u16);
+            }
+            // FX33 - LD [I], D2(Vx)
+            //           [I + 1], D1(Vx)
+            //           [I + 2], D0(Vx)
+            (0xF, _x, 0x3, 0x3) => {
+                let vx = self.v_reg[instr.get_x() as usize];
+                let (d2, d1, d0) = (vx / u8::pow(10, 2), (vx / 10) % 10, vx % 10);
+                self.memory[self.i_reg as usize] = d2;
+                self.memory[(self.i_reg + 1) as usize] = d1;
+                self.memory[(self.i_reg + 2) as usize] = d0;
+            }
+            // FX55 - LD [I], V0
+            //           [I + 1], V1
+            //             ...
+            //           [I + x], Vx
+            //   WARN: There is conflicting info on whether I = {I or I + x + 1}
+            (0xF, _x, 0x5, 0x5) => {
+                let vx = self.v_reg[instr.get_x() as usize];
+                for offset in 0..=(vx as usize) {
+                    self.memory[self.i_reg as usize + offset] = self.v_reg[offset];
+                }
+            }
             // FX65 - LD Vx, [I]
-            (0xF, _x, 0x6, 0x5) => todo!(),
+            //           V1, [I + 1]
+            //             ...
+            //           Vx, [I + x]
+            //   WARN: There is conflicting info on whether I = {I or I + x + 1}
+            (0xF, _x, 0x6, 0x5) => {
+                let vx = self.v_reg[instr.get_x() as usize];
+                for offset in 0..=(vx as usize) {
+                    self.v_reg[offset] = self.memory[self.i_reg as usize + offset];
+                }
+            }
             (_, _, _, _) => panic!(),
         }
     }
