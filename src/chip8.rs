@@ -88,6 +88,7 @@ pub struct Chip8 {
     //                        w, w+1,  ... , 2w-1
     //                        ...      ... , nw-1
     //                        w(h-1),  ... , wh-1
+    // TODO: bitmaps/bitvec::array
     display: [bool; DISPLAY_WIDTH * DISPLAY_HEIGHT],
 
     //  Input device: 16-key keypad (0x0-0xF)
@@ -97,7 +98,7 @@ pub struct Chip8 {
     //    | 7  8  9  E |
     //    | A  0  B  F |
     //    +------------+
-    // TODO: bitflags/bitmaps?
+    // TODO: bitflags/bitmaps
     keypad: [bool; NUM_KEYS],
     // General timer used for game events
     delay_timer: u8,
@@ -141,9 +142,9 @@ impl Chip8 {
     pub fn fetch_instruction(&mut self) -> Instruction {
         // Program Counter is monotonically non-decreasing starting at 0x200;
         // it is up to the ROM to ensure that the PC remains within valid bounds
-        // if self.pc < ROM_START || self.pc >= (RAM_SIZE as u16) {
-        //     panic!("Bad ROM!!")
-        // }
+        if self.pc < ROM_START || self.pc >= (RAM_SIZE as u16) {
+            panic!("Segfault: invalid ROM");
+        }
 
         // CHIP-8 instructions are stored big-endian
         let hb = self.memory[self.pc as usize];
@@ -164,13 +165,16 @@ impl Chip8 {
             }
             // 00EE - RET
             (0x0, 0x0, 0xE, 0xE) => {
-                let ret_addr = self.stack.pop().expect(""); // TODO
+                let ret_addr = self.stack.pop().expect("Segfault: invalid ROM");
                 self.pc = ret_addr;
                 incr_pc = false;
             }
             // 0NNN - SYSC addr (Ignored by modern interpreters)
             (0x0, _n1, _n2, _n3) => {
-                eprintln!(""); // TODO
+                eprintln!(
+                    "Encountered unsupported instruction: {:#04X}",
+                    u16::from(instr)
+                );
             }
             // 1NNN - JMP addr
             (0x1, _n1, _n2, _n3) => {
@@ -278,8 +282,27 @@ impl Chip8 {
             (0xC, x, _n2, _n3) => {
                 self.v_reg[x as usize] = fastrand::u8(..) & instr.get_nn();
             }
-            // DXYN - DRAW Vx, Vy, nibble
-            (0xD, x, y, n) => todo!(),
+            // DXYN - DRAW Vx, Vy, nibble; set VF
+            //   Read an n-byte sprite from memory starting at addr I and display onto coordinates (Vx, Vy)
+            //   Detect collision and set VF accordingly; pixels positioned offscreen are wrapped around the display
+            (0xD, x, y, n) => {
+                let sprite = &self.memory[self.i_reg as usize..(self.i_reg + n as u16) as usize];
+                let coord = (self.v_reg[x as usize], self.v_reg[y as usize]);
+                self.v_reg[0xF] = 0;
+
+                for (dy, byte) in sprite.iter().enumerate() {
+                    let coord_y = (coord.1 as usize + dy) % DISPLAY_HEIGHT;
+                    for dx in 0..u8::BITS as usize {
+                        let coord_x = (coord.0 as usize + dx) % DISPLAY_WIDTH;
+                        let bit = byte >> (u8::BITS as usize - 1 - dx) & 0x1;
+                        let idx = coord_y * DISPLAY_WIDTH + coord_x;
+
+                        // Collided if any corresponding sprite and display bits are HIGH (bitwise AND)
+                        self.v_reg[0xF] |= self.display[idx] as u8 & bit;
+                        self.display[idx] = (self.display[idx] as u8 ^ bit) != 0;
+                    }
+                }
+            }
             // EX9E - SKP Vx
             (0xE, x, 0x9, 0xE) => {
                 let key_down = self.keypad[self.v_reg[x as usize] as usize];
@@ -356,7 +379,12 @@ impl Chip8 {
                     self.v_reg[offset] = self.memory[self.i_reg as usize + offset];
                 }
             }
-            (_, _, _, _) => panic!(),
+            (_, _, _, _) => {
+                panic!(
+                    "Encountered unrecognized instruction: {:#04X}",
+                    u16::from(instr)
+                );
+            }
         }
 
         if incr_pc {
