@@ -61,6 +61,8 @@ const FONT_PX_HEIGHT: usize = 5;
 const DISPLAY_WIDTH: usize = 64;
 const DISPLAY_HEIGHT: usize = 32;
 
+const NUM_KEYS: usize = 16;
+
 pub struct Chip8 {
     // RAM of the CHIP-8 VM
     memory: [u8; RAM_SIZE],
@@ -75,7 +77,7 @@ pub struct Chip8 {
     // V - general purpose data registers
     v_reg: [u8; NUM_DATA_REGS],
 
-    //  64x32-pixel monochrome display
+    //  Output device: 64x32-pixel monochrome display
     //    +--------------------+
     //    |(0, 0)       (63, 0)|
     //    |                    |
@@ -88,8 +90,15 @@ pub struct Chip8 {
     //                        w(h-1),  ... , wh-1
     display: [bool; DISPLAY_WIDTH * DISPLAY_HEIGHT],
 
-    // Key Input (0x00-0x0F); upper 4 bits are ignored
-    key_pressed: Option<u8>,
+    //  Input device: 16-key keypad (0x0-0xF)
+    //    +------------+
+    //    | 1  2  3  C |
+    //    | 4  5  6  D |
+    //    | 7  8  9  E |
+    //    | A  0  B  F |
+    //    +------------+
+    // TODO: bitflags/bitmaps?
+    keypad: [bool; NUM_KEYS],
     // General timer used for game events
     delay_timer: u8,
     // Timer for sound effects; a beep is made when the value is nonzero
@@ -108,7 +117,7 @@ impl Chip8 {
             i_reg: 0,
             v_reg: [0; NUM_DATA_REGS],
             display: [false; DISPLAY_WIDTH * DISPLAY_HEIGHT],
-            key_pressed: None,
+            keypad: [false; NUM_KEYS],
             delay_timer: 0,
             sound_timer: 0,
         };
@@ -130,7 +139,7 @@ impl Chip8 {
     }
 
     pub fn fetch_instruction(&mut self) -> Instruction {
-        // Program Counter monotonically increases starting at 0x200;
+        // Program Counter is monotonically non-decreasing starting at 0x200;
         // it is up to the ROM to ensure that the PC remains within valid bounds
         // if self.pc < ROM_START || self.pc >= (RAM_SIZE as u16) {
         //     panic!("Bad ROM!!")
@@ -140,17 +149,15 @@ impl Chip8 {
         let hb = self.memory[self.pc as usize];
         let lb = self.memory[(self.pc + 1) as usize];
         // Instruction (`modular_bitfield::bitfield`) is constructed lsb -> msb
-        let instr = Instruction::from_bytes([lb, hb]);
-        self.pc += PC_STEP;
-
-        instr
+        Instruction::from_bytes([lb, hb])
     }
 
     pub fn exec_instruction(&mut self, instr: Instruction) {
-        let (o, x, y, n) = (instr.get_o(), instr.get_x(), instr.get_y(), instr.get_n());
+        // Whether to step our PC at the end of cycle - true; false if any jumps are issued
+        let mut incr_pc = true;
 
         // Decode and excute instruction
-        match (o, x, y, n) {
+        match (instr.get_o(), instr.get_x(), instr.get_y(), instr.get_n()) {
             // 00E0 - CLRS
             (0x0, 0x0, 0xE, 0x0) => {
                 self.display.fill(false);
@@ -159,6 +166,7 @@ impl Chip8 {
             (0x0, 0x0, 0xE, 0xE) => {
                 let ret_addr = self.stack.pop().expect(""); // TODO
                 self.pc = ret_addr;
+                incr_pc = false;
             }
             // 0NNN - SYSC addr (Ignored by modern interpreters)
             (0x0, _n1, _n2, _n3) => {
@@ -168,146 +176,161 @@ impl Chip8 {
             (0x1, _n1, _n2, _n3) => {
                 let addr = instr.get_nnn();
                 self.pc = addr;
+                incr_pc = false;
             }
             // 2NNN - CALL addr
             (0x2, _n1, _n2, _n3) => {
                 let addr = instr.get_nnn();
                 self.stack.push(self.pc);
                 self.pc = addr;
+                incr_pc = false;
             }
             // 3XNN - SKE Vx, byte
-            (0x3, _x, _n2, _n3) => {
-                if self.v_reg[instr.get_x() as usize] == instr.get_nn() {
+            (0x3, x, _n2, _n3) => {
+                if self.v_reg[x as usize] == instr.get_nn() {
                     self.pc += PC_STEP;
                 }
             }
             // 4XNN - SKNE Vx, byte
-            (0x4, _x, _n2, _n3) => {
-                if self.v_reg[instr.get_x() as usize] != instr.get_nn() {
+            (0x4, x, _n2, _n3) => {
+                if self.v_reg[x as usize] != instr.get_nn() {
                     self.pc += PC_STEP;
                 }
             }
             // 5XY0 - SKE Vx, Vy
-            (0x5, _x, _y, 0x0) => {
-                if self.v_reg[instr.get_x() as usize] == self.v_reg[instr.get_y() as usize] {
+            (0x5, x, y, 0x0) => {
+                if self.v_reg[x as usize] == self.v_reg[y as usize] {
                     self.pc += PC_STEP;
                 }
             }
             // 6XNN - LD Vx, byte
-            (0x6, _x, _n2, _n3) => {
-                self.v_reg[instr.get_x() as usize] = instr.get_nn();
+            (0x6, x, _n2, _n3) => {
+                self.v_reg[x as usize] = instr.get_nn();
             }
             // 7XNN - ADD Vx, byte
-            (0x7, _x, _n2, _n3) => {
-                let (x, nn) = (instr.get_x(), instr.get_nn());
-                self.v_reg[x as usize] = self.v_reg[x as usize].wrapping_add(nn);
+            (0x7, x, _n2, _n3) => {
+                self.v_reg[x as usize] = self.v_reg[x as usize].wrapping_add(instr.get_nn());
             }
             // 8XY0 - LD Vx, Vy
-            (0x8, _x, _y, 0x0) => {
-                self.v_reg[instr.get_x() as usize] = self.v_reg[instr.get_y() as usize];
+            (0x8, x, y, 0x0) => {
+                self.v_reg[x as usize] = self.v_reg[y as usize];
             }
             // 8XY1 - OR Vx, Vy
-            (0x8, _x, _y, 0x1) => {
-                self.v_reg[instr.get_x() as usize] |= self.v_reg[instr.get_y() as usize];
+            (0x8, x, y, 0x1) => {
+                self.v_reg[x as usize] |= self.v_reg[y as usize];
             }
             // 8XY2 - AND Vx, Vy
-            (0x8, _x, _y, 0x2) => {
-                self.v_reg[instr.get_x() as usize] &= self.v_reg[instr.get_y() as usize];
+            (0x8, x, y, 0x2) => {
+                self.v_reg[x as usize] &= self.v_reg[y as usize];
             }
             // 8XY3 - XOR Vx, Vy
-            (0x8, _x, _y, 0x3) => {
-                self.v_reg[instr.get_x() as usize] ^= self.v_reg[instr.get_y() as usize];
+            (0x8, x, y, 0x3) => {
+                self.v_reg[x as usize] ^= self.v_reg[y as usize];
             }
             // 8XY4 - ADD Vx, Vy; set VF
-            (0x8, _x, _y, 0x4) => {
-                let (x, y) = (instr.get_x(), instr.get_y());
+            (0x8, x, y, 0x4) => {
                 let (vx, carry) = self.v_reg[x as usize].overflowing_add(self.v_reg[y as usize]);
                 self.v_reg[x as usize] = vx;
                 self.v_reg[0xF] = carry as u8;
             }
             // 8XY5 - SUB Vx, Vy; set VF
-            (0x8, _x, _y, 0x5) => {
-                let (x, y) = (instr.get_x(), instr.get_y());
+            (0x8, x, y, 0x5) => {
                 let (vx, borrow) = self.v_reg[x as usize].overflowing_sub(self.v_reg[y as usize]);
                 self.v_reg[x as usize] = vx;
                 self.v_reg[0xF] = !borrow as u8;
             }
             // 8XY6 - SHR Vx {, Vy}; set VF
             //   WARN: There is conflicting info on whether Vx = { Vx >> 1 or Vy >> 1 }
-            (0x8, _x, _y, 0x6) => {
-                let x = instr.get_x();
+            (0x8, x, _y, 0x6) => {
                 self.v_reg[0xF] = self.v_reg[x as usize] & 0x1;
                 self.v_reg[x as usize] >>= 1;
             }
             // 8XY7 - SUBN Vx, Vy; set VF
-            (0x8, _x, _y, 0x7) => {
-                let (x, y) = (instr.get_x(), instr.get_y());
+            (0x8, x, y, 0x7) => {
                 let (vx, borrow) = self.v_reg[y as usize].overflowing_sub(self.v_reg[x as usize]);
                 self.v_reg[x as usize] = vx;
                 self.v_reg[0xF] = !borrow as u8;
             }
             // 8XYE - SHL Vx {, Vy}; set VF
             //   WARN: There is conflicting info on whether Vx = { Vx << 1 or Vy << 1 }
-            (0x8, _x, _y, 0xE) => {
-                let x = instr.get_x();
+            (0x8, x, _y, 0xE) => {
                 self.v_reg[0xF] = (self.v_reg[x as usize] >> (u8::BITS - 1)) & 0x1;
                 self.v_reg[x as usize] <<= 1;
             }
             // 9XY0 - SKNE Vx, Vy
-            (0x9, _x, _y, 0x0) => {
-                if self.v_reg[instr.get_x() as usize] != self.v_reg[instr.get_y() as usize] {
+            (0x9, x, y, 0x0) => {
+                if self.v_reg[x as usize] != self.v_reg[y as usize] {
                     self.pc += PC_STEP;
                 }
             }
             // ANNN - LD I, addr
             (0xA, _n1, _n2, _n3) => {
-                self.i_reg = instr.get_nnn();
+                let addr = instr.get_nnn();
+                self.i_reg = addr;
             }
             // BNNN - JMP V0, addr
             (0xB, _n1, _n2, _n3) => {
                 let addr = instr.get_nnn();
                 self.pc = addr + (self.v_reg[0x0] as u16);
+                incr_pc = false;
             }
             // CXNN - RAND Vx, byte
-            (0xC, _x, _n2, _n3) => {
-                self.v_reg[instr.get_x() as usize] = fastrand::u8(..) & instr.get_nn();
+            (0xC, x, _n2, _n3) => {
+                self.v_reg[x as usize] = fastrand::u8(..) & instr.get_nn();
             }
             // DXYN - DRAW Vx, Vy, nibble
-            (0xD, _x, _y, _n3) => todo!(),
+            (0xD, x, y, n) => todo!(),
             // EX9E - SKP Vx
-            (0xE, _x, 0x9, 0xE) => todo!(),
+            (0xE, x, 0x9, 0xE) => {
+                let key_down = self.keypad[self.v_reg[x as usize] as usize];
+                if key_down {
+                    self.pc += PC_STEP;
+                }
+            }
             // EXA1 - SKNP Vx
-            (0xE, _x, 0xA, 0x1) => todo!(),
+            (0xE, x, 0xA, 0x1) => {
+                let key_down = self.keypad[self.v_reg[x as usize] as usize];
+                if !key_down {
+                    self.pc += PC_STEP;
+                }
+            }
             // FX07 - LD Vx, DT
-            (0xF, _x, 0x0, 0x7) => {
-                self.v_reg[instr.get_x() as usize] = self.delay_timer;
+            (0xF, x, 0x0, 0x7) => {
+                self.v_reg[x as usize] = self.delay_timer;
             }
             // FX0A - LD Vx, K
-            (0xF, _x, 0x0, 0xA) => todo!(),
+            (0xF, x, 0x0, 0xA) => {
+                // TODO: Better input handling (Most recently pressed key? Listen for input?)
+                //       instead of reading input bus and defaulting to pressed key with lowest index
+                if let Some(k_idx) = self.keypad.iter().position(|key_down| *key_down) {
+                    self.v_reg[x as usize] = k_idx as u8;
+                } else {
+                    // Block execution (no-op and repeat instr next cycle) until input detected
+                    incr_pc = false;
+                }
+            }
             // FX15 - LD DT, Vx
-            (0xF, _x, 0x1, 0x5) => {
-                self.delay_timer = self.v_reg[instr.get_x() as usize];
+            (0xF, x, 0x1, 0x5) => {
+                self.delay_timer = self.v_reg[x as usize];
             }
             // FX18 - LD ST, Vx
-            (0xF, _x, 0x1, 0x8) => {
-                self.sound_timer = self.v_reg[instr.get_x() as usize];
+            (0xF, x, 0x1, 0x8) => {
+                self.sound_timer = self.v_reg[x as usize];
             }
             // FX1E - ADD I, Vx
-            (0xF, _x, 0x1, 0xE) => {
-                let vx = self.v_reg[instr.get_x() as usize];
-                self.i_reg = self.i_reg.wrapping_add(vx as u16);
+            (0xF, x, 0x1, 0xE) => {
+                self.i_reg = self.i_reg.wrapping_add(self.v_reg[x as usize] as u16);
             }
             // FX29 - LEA I, F(Vx)
-            (0xF, _x, 0x2, 0x9) => {
-                let vx = self.v_reg[instr.get_x() as usize];
+            (0xF, x, 0x2, 0x9) => {
                 // Address for font sprite representing hex digit '{Vx}' = Vx * bytes_per_font_sprite
-                self.i_reg = (vx as u16) * (FONT_PX_HEIGHT as u16);
+                self.i_reg = (self.v_reg[x as usize] as u16) * (FONT_PX_HEIGHT as u16);
             }
             // FX33 - LD [I], D2(Vx)
             //           [I + 1], D1(Vx)
             //           [I + 2], D0(Vx)
-            (0xF, _x, 0x3, 0x3) => {
-                let vx = self.v_reg[instr.get_x() as usize];
+            (0xF, x, 0x3, 0x3) => {
+                let vx = self.v_reg[x as usize];
                 let (d2, d1, d0) = (vx / u8::pow(10, 2), (vx / 10) % 10, vx % 10);
                 self.memory[self.i_reg as usize] = d2;
                 self.memory[(self.i_reg + 1) as usize] = d1;
@@ -318,9 +341,8 @@ impl Chip8 {
             //             ...
             //           [I + x], Vx
             //   WARN: There is conflicting info on whether I = {I or I + x + 1}
-            (0xF, _x, 0x5, 0x5) => {
-                let vx = self.v_reg[instr.get_x() as usize];
-                for offset in 0..=(vx as usize) {
+            (0xF, x, 0x5, 0x5) => {
+                for offset in 0..=(x as usize) {
                     self.memory[self.i_reg as usize + offset] = self.v_reg[offset];
                 }
             }
@@ -329,13 +351,16 @@ impl Chip8 {
             //             ...
             //           Vx, [I + x]
             //   WARN: There is conflicting info on whether I = {I or I + x + 1}
-            (0xF, _x, 0x6, 0x5) => {
-                let vx = self.v_reg[instr.get_x() as usize];
-                for offset in 0..=(vx as usize) {
+            (0xF, x, 0x6, 0x5) => {
+                for offset in 0..=(x as usize) {
                     self.v_reg[offset] = self.memory[self.i_reg as usize + offset];
                 }
             }
             (_, _, _, _) => panic!(),
+        }
+
+        if incr_pc {
+            self.pc += PC_STEP;
         }
     }
 }
