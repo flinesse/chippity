@@ -198,32 +198,75 @@ impl Chip8 {
             }
             // 7XNN - ADD Vx, byte
             (0x7, _x, _n2, _n3) => {
-                self.v_reg[instr.get_x() as usize] += instr.get_nn();
+                let (x, nn) = (instr.get_x(), instr.get_nn());
+                self.v_reg[x as usize] = self.v_reg[x as usize].wrapping_add(nn);
             }
             // 8XY0 - LD Vx, Vy
-            (0x8, _x, _y, 0x0) => todo!(),
+            (0x8, _x, _y, 0x0) => {
+                self.v_reg[instr.get_x() as usize] = self.v_reg[instr.get_y() as usize];
+            }
             // 8XY1 - OR Vx, Vy
-            (0x8, _x, _y, 0x1) => todo!(),
+            (0x8, _x, _y, 0x1) => {
+                self.v_reg[instr.get_x() as usize] |= self.v_reg[instr.get_y() as usize];
+            }
             // 8XY2 - AND Vx, Vy
-            (0x8, _x, _y, 0x2) => todo!(),
+            (0x8, _x, _y, 0x2) => {
+                self.v_reg[instr.get_x() as usize] &= self.v_reg[instr.get_y() as usize];
+            }
             // 8XY3 - XOR Vx, Vy
-            (0x8, _x, _y, 0x3) => todo!(),
-            // 8XY4 - ADD Vx, Vy
-            (0x8, _x, _y, 0x4) => todo!(),
-            // 8XY5 - SUB Vx, Vy
-            (0x8, _x, _y, 0x5) => todo!(),
-            // 8XY6 - SHR Vx {, Vy}
-            (0x8, _x, _y, 0x6) => todo!(),
-            // 8XY7 - SUBN Vx, Vy
-            (0x8, _x, _y, 0x7) => todo!(),
-            // 8XYE - SHL Vx {, Vy}
-            (0x8, _x, _y, 0xE) => todo!(),
-            // 9XY0 - SNE Vx, Vy
-            (0x9, _x, _y, 0x0) => todo!(),
+            (0x8, _x, _y, 0x3) => {
+                self.v_reg[instr.get_x() as usize] ^= self.v_reg[instr.get_y() as usize];
+            }
+            // 8XY4 - ADD Vx, Vy; set VF
+            (0x8, _x, _y, 0x4) => {
+                let (x, y) = (instr.get_x(), instr.get_y());
+                let (vx, carry) = self.v_reg[x as usize].overflowing_add(self.v_reg[y as usize]);
+                self.v_reg[x as usize] = vx;
+                self.v_reg[0xF] = carry as u8;
+            }
+            // 8XY5 - SUB Vx, Vy; set VF
+            (0x8, _x, _y, 0x5) => {
+                let (x, y) = (instr.get_x(), instr.get_y());
+                let (vx, borrow) = self.v_reg[x as usize].overflowing_sub(self.v_reg[y as usize]);
+                self.v_reg[x as usize] = vx;
+                self.v_reg[0xF] = !borrow as u8;
+            }
+            // 8XY6 - SHR Vx {, Vy}; set VF
+            //   WARN: There is conflicting info on whether Vx = { Vx >> 1 or Vy >> 1 }
+            (0x8, _x, _y, 0x6) => {
+                let x = instr.get_x();
+                self.v_reg[0xF] = self.v_reg[x as usize] & 0x1;
+                self.v_reg[x as usize] >>= 1;
+            }
+            // 8XY7 - SUBN Vx, Vy; set VF
+            (0x8, _x, _y, 0x7) => {
+                let (x, y) = (instr.get_x(), instr.get_y());
+                let (vx, borrow) = self.v_reg[y as usize].overflowing_sub(self.v_reg[x as usize]);
+                self.v_reg[x as usize] = vx;
+                self.v_reg[0xF] = !borrow as u8;
+            }
+            // 8XYE - SHL Vx {, Vy}; set VF
+            //   WARN: There is conflicting info on whether Vx = { Vx << 1 or Vy << 1 }
+            (0x8, _x, _y, 0xE) => {
+                let x = instr.get_x();
+                self.v_reg[0xF] = (self.v_reg[x as usize] >> (u8::BITS - 1)) & 0x1;
+                self.v_reg[x as usize] <<= 1;
+            }
+            // 9XY0 - SKNE Vx, Vy
+            (0x9, _x, _y, 0x0) => {
+                if self.v_reg[instr.get_x() as usize] != self.v_reg[instr.get_y() as usize] {
+                    self.pc += PC_STEP;
+                }
+            }
             // ANNN - LD I, addr
-            (0xA, _n1, _n2, _n3) => todo!(),
-            // BNNN - JP V0, addr
-            (0xB, _n1, _n2, _n3) => todo!(),
+            (0xA, _n1, _n2, _n3) => {
+                self.i_reg = instr.get_nnn();
+            }
+            // BNNN - JMP V0, addr
+            (0xB, _n1, _n2, _n3) => {
+                let addr = instr.get_nnn();
+                self.pc = addr + (self.v_reg[0x0] as u16);
+            }
             // CXNN - RND Vx, byte
             (0xC, _x, _n2, _n3) => todo!(),
             // DXYN - DRW Vx, Vy, nibble
