@@ -1,5 +1,4 @@
-use modular_bitfield::bitfield;
-use modular_bitfield::specifiers::B4;
+use modular_bitfield::{bitfield, specifiers::B4};
 
 //    CHIP-8 Instruction Set format:
 //
@@ -18,9 +17,13 @@ use modular_bitfield::specifiers::B4;
 #[bitfield]
 #[repr(u16)]
 pub struct Instruction {
+    #[skip(setters)]
     n3: B4,
+    #[skip(setters)]
     n2: B4,
+    #[skip(setters)]
     n1: B4,
+    #[skip(setters)]
     n0: B4,
 }
 

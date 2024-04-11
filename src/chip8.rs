@@ -1,4 +1,5 @@
 use crate::instruction::Instruction;
+use crate::io_device::{Input, KeyState};
 
 //    CHIP-8 Virtual Machine memory layout:
 //    +-----------------------------------+= 0xFFF (4095) End of CHIP-8 RAM
@@ -38,7 +39,7 @@ const NUM_DATA_REGS: usize = 16;
 const PC_STEP: u16 = 2; // mem::size_of::<Instruction>() / chip8_addressable_unit = 2
 
 // Pre-defined "static" font data that will occupy memory reserved for the interpreter (<0x200)
-pub const FONT_SPRITES: [[u8; FONT_PX_HEIGHT]; 16] = [
+const FONT_SPRITES: [[u8; FONT_PX_HEIGHT]; 16] = [
     [0xF0, 0x90, 0x90, 0x90, 0xF0], // 0
     [0x20, 0x60, 0x20, 0x20, 0x70], // 1
     [0xF0, 0x10, 0xF0, 0x80, 0xF0], // 2
@@ -58,10 +59,10 @@ pub const FONT_SPRITES: [[u8; FONT_PX_HEIGHT]; 16] = [
 ];
 const FONT_PX_HEIGHT: usize = 5;
 
-const DISPLAY_WIDTH: usize = 64;
-const DISPLAY_HEIGHT: usize = 32;
+pub const DISPLAY_WIDTH: usize = 64;
+pub const DISPLAY_HEIGHT: usize = 32;
 
-const NUM_KEYS: usize = 16;
+pub const NUM_KEYS: usize = 16;
 
 pub struct Chip8 {
     // RAM of the CHIP-8 VM
@@ -89,7 +90,7 @@ pub struct Chip8 {
     //                        ...      ... , nw-1
     //                        w(h-1),  ... , wh-1
     // TODO: bitmaps/bitvec::array
-    display: [bool; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+    display_bus: [bool; DISPLAY_WIDTH * DISPLAY_HEIGHT],
 
     //  Input device: 16-key keypad (0x0-0xF)
     //    +------------+
@@ -99,7 +100,7 @@ pub struct Chip8 {
     //    | A  0  B  F |
     //    +------------+
     // TODO: bitflags/bitmaps
-    keypad: [bool; NUM_KEYS],
+    input_bus: [bool; NUM_KEYS],
     // General timer used for game events
     delay_timer: u8,
     // Timer for sound effects; a beep is made when the value is nonzero
@@ -108,7 +109,7 @@ pub struct Chip8 {
 
 impl Chip8 {
     pub fn new() -> Self {
-        let mut emu = Chip8 {
+        let mut sys = Chip8 {
             memory: [0; RAM_SIZE],
             pc: ROM_START,
             // The original RCA 1802 version allowed up to 12 levels of nesting
@@ -117,14 +118,14 @@ impl Chip8 {
             sp: 0,
             i_reg: 0,
             v_reg: [0; NUM_DATA_REGS],
-            display: [false; DISPLAY_WIDTH * DISPLAY_HEIGHT],
-            keypad: [false; NUM_KEYS],
+            display_bus: [false; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+            input_bus: [false; NUM_KEYS],
             delay_timer: 0,
             sound_timer: 0,
         };
 
-        emu.load_fonts();
-        emu
+        sys.load_fonts();
+        sys
     }
 
     fn load_fonts(&mut self) {
@@ -137,6 +138,15 @@ impl Chip8 {
         let start = ROM_START as usize;
         let end = (ROM_START as usize) + data.len();
         self.memory[start..end].copy_from_slice(data);
+    }
+
+    pub fn tick_timers(&mut self) {
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
+        }
+        if self.sound_timer > 0 {
+            self.sound_timer -= 1;
+        }
     }
 
     pub fn fetch_instruction(&mut self) -> Instruction {
@@ -161,7 +171,7 @@ impl Chip8 {
         match (instr.get_o(), instr.get_x(), instr.get_y(), instr.get_n()) {
             // 00E0 - CLRS
             (0x0, 0x0, 0xE, 0x0) => {
-                self.display.fill(false);
+                self.display_bus.fill(false);
             }
             // 00EE - RET
             (0x0, 0x0, 0xE, 0xE) => {
@@ -298,21 +308,21 @@ impl Chip8 {
                         let idx = coord_y * DISPLAY_WIDTH + coord_x;
 
                         // Collided if any corresponding sprite and display bits are HIGH (bitwise AND)
-                        self.v_reg[0xF] |= self.display[idx] as u8 & bit;
-                        self.display[idx] = (self.display[idx] as u8 ^ bit) != 0;
+                        self.v_reg[0xF] |= self.display_bus[idx] as u8 & bit;
+                        self.display_bus[idx] = (self.display_bus[idx] as u8 ^ bit) != 0;
                     }
                 }
             }
             // EX9E - SKP Vx
             (0xE, x, 0x9, 0xE) => {
-                let key_down = self.keypad[self.v_reg[x as usize] as usize];
+                let key_down = self.input_bus[self.v_reg[x as usize] as usize];
                 if key_down {
                     self.pc += PC_STEP;
                 }
             }
             // EXA1 - SKNP Vx
             (0xE, x, 0xA, 0x1) => {
-                let key_down = self.keypad[self.v_reg[x as usize] as usize];
+                let key_down = self.input_bus[self.v_reg[x as usize] as usize];
                 if !key_down {
                     self.pc += PC_STEP;
                 }
@@ -325,7 +335,7 @@ impl Chip8 {
             (0xF, x, 0x0, 0xA) => {
                 // TODO: Better input handling (Most recently pressed key? Listen for input?)
                 //       instead of reading input bus and defaulting to pressed key with lowest index
-                if let Some(k_idx) = self.keypad.iter().position(|key_down| *key_down) {
+                if let Some(k_idx) = self.input_bus.iter().position(|key_down| *key_down) {
                     self.v_reg[x as usize] = k_idx as u8;
                 } else {
                     // Block execution (no-op and repeat instr next cycle) until input detected
@@ -390,5 +400,22 @@ impl Chip8 {
         if incr_pc {
             self.pc += PC_STEP;
         }
+    }
+
+    pub fn receive_input(&mut self, msg: Option<Input>) -> Option<Input> {
+        msg.inspect(|input| {
+            self.input_bus[input.keycode() as usize] = match input.key_state() {
+                KeyState::Up => false,
+                KeyState::Down => true,
+            }
+        })
+    }
+
+    pub fn transmit_audio(&self) -> bool {
+        self.sound_timer > 0
+    }
+
+    pub fn transmit_frame(&self) -> &[bool; DISPLAY_WIDTH * DISPLAY_HEIGHT] {
+        &self.display_bus
     }
 }
