@@ -15,7 +15,7 @@ use crate::chip8::{DISPLAY_HEIGHT, DISPLAY_WIDTH};
 //    +-----------------------+-------+-------------------------------+
 #[bitfield]
 #[repr(u8)]
-pub struct Input {
+pub struct InputMsg {
     #[skip(setters)]
     pub keycode: B4,
     #[skip(setters)]
@@ -33,7 +33,7 @@ pub enum KeyState {
 
 // Model input device (e.g. keypad, keyboard, touchscreen, etc.) interfacing with our CHIP-8 system
 pub trait InputDevice {
-    fn send_input(&self) -> Option<Input>;
+    fn send_input(&self) -> Option<InputMsg>;
 }
 
 // Model display device (e.g. UI library window, physical screen, etc.) interfacing with our CHIP-8 system
@@ -58,14 +58,13 @@ pub enum NullDevice {
 }
 
 impl InputDevice for NullDevice {
-    fn send_input(&self) -> Option<Input> {
+    fn send_input(&self) -> Option<InputMsg> {
         None
     }
 }
 
 impl DisplayDevice for NullDevice {
     fn receive_frame(&self, _framebuf: &[bool; DISPLAY_WIDTH * DISPLAY_HEIGHT]) {}
-
     fn drive_display(&self) {
         eprintln!(); // TODO
     }
@@ -73,7 +72,6 @@ impl DisplayDevice for NullDevice {
 
 impl AudioDevice for NullDevice {
     fn receive_signal(&self, _data: bool) {}
-
     fn play_sound(&self) {
         eprintln!(); // TODO
     }

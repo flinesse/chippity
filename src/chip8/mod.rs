@@ -1,5 +1,7 @@
-use crate::instruction::Instruction;
-use crate::io_device::{Input, KeyState};
+mod instruction;
+
+use crate::driver::{InputMsg, KeyState};
+use instruction::Instruction;
 
 //    CHIP-8 Virtual Machine memory layout:
 //    +-----------------------------------+= 0xFFF (4095) End of CHIP-8 RAM
@@ -402,7 +404,7 @@ impl Chip8 {
         }
     }
 
-    pub fn receive_input(&mut self, msg: Option<Input>) -> Option<Input> {
+    pub fn receive_input(&mut self, msg: Option<InputMsg>) -> Option<InputMsg> {
         msg.inspect(|input| {
             self.input_bus[input.keycode() as usize] = match input.key_state() {
                 KeyState::Up => false,
