@@ -1,6 +1,9 @@
 mod instruction;
 
-use crate::driver::{InputMsg, KeyState};
+use bitvec::{bitarr, order::Msb0, slice::BitSlice, view::BitView, BitArr};
+use smallvec::SmallVec;
+
+use crate::driver::InputMsg;
 use instruction::Instruction;
 
 //    CHIP-8 Virtual Machine memory layout:
@@ -61,9 +64,9 @@ const FONT_SPRITES: [[u8; FONT_PX_HEIGHT]; 16] = [
 ];
 const FONT_PX_HEIGHT: usize = 5;
 
+pub const TIMER_FREQ: usize = 60;
 pub const DISPLAY_WIDTH: usize = 64;
 pub const DISPLAY_HEIGHT: usize = 32;
-
 pub const NUM_KEYS: usize = 16;
 
 pub struct Chip8 {
@@ -72,7 +75,9 @@ pub struct Chip8 {
     // Program Counter
     pc: u16,
     // CHIP-8 call stack; its only purpose is to push/pop any callers' return address
-    stack: Vec<u16>,
+    //   "The original RCA 1802 version allowed up to 12 levels of
+    //   nesting; _modern implementations may wish to allocate more_"
+    stack: SmallVec<[u16; STACK_SIZE]>,
     // Stack Pointer
     sp: u16,
     // I - the address register
@@ -87,12 +92,12 @@ pub struct Chip8 {
     //    |                    |
     //    |(0, 31)     (63, 31)|
     //    +--------------------+
-    //  Modeled as 1-D array: 0, 1, 2, ... , w-1
-    //                        w, w+1,  ... , 2w-1
-    //                        ...      ... , nw-1
-    //                        w(h-1),  ... , wh-1
-    // TODO: bitmaps/bitvec::array
-    display_bus: [bool; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+    //  Modeled in 1-D as: 0, 1, 2, ... , w-1
+    //                     w, w+1,  ... , 2w-1
+    //                     ...      ... , nw-1
+    //                     w(h-1),  ... , wh-1
+    //          and stored as a 2048-bit array
+    display_bus: BitArr!(for DISPLAY_WIDTH * DISPLAY_HEIGHT),
 
     //  Input device: 16-key keypad (0x0-0xF)
     //    +------------+
@@ -101,8 +106,9 @@ pub struct Chip8 {
     //    | 7  8  9  E |
     //    | A  0  B  F |
     //    +------------+
-    // TODO: bitflags/bitmaps
-    input_bus: [bool; NUM_KEYS],
+    //  Stored as a 16-bit array with the (n as hex)th bit
+    //  corresponding to the key state; KEY_UP = 0, KEY_DOWN = 1
+    input_bus: BitArr!(for NUM_KEYS),
     // General timer used for game events
     delay_timer: u8,
     // Timer for sound effects; a beep is made when the value is nonzero
@@ -114,14 +120,12 @@ impl Chip8 {
         let mut sys = Chip8 {
             memory: [0; RAM_SIZE],
             pc: ROM_START,
-            // The original RCA 1802 version allowed up to 12 levels of nesting
-            // _Modern implementations may wish to allocate more_
-            stack: Vec::with_capacity(STACK_SIZE),
+            stack: SmallVec::new(),
             sp: 0,
             i_reg: 0,
             v_reg: [0; NUM_DATA_REGS],
-            display_bus: [false; DISPLAY_WIDTH * DISPLAY_HEIGHT],
-            input_bus: [false; NUM_KEYS],
+            display_bus: bitarr![0; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+            input_bus: bitarr![0; NUM_KEYS],
             delay_timer: 0,
             sound_timer: 0,
         };
@@ -304,14 +308,14 @@ impl Chip8 {
 
                 for (dy, byte) in sprite.iter().enumerate() {
                     let coord_y = (coord.1 as usize + dy) % DISPLAY_HEIGHT;
-                    for dx in 0..u8::BITS as usize {
+                    for (dx, bit) in byte.view_bits::<Msb0>().iter().enumerate() {
                         let coord_x = (coord.0 as usize + dx) % DISPLAY_WIDTH;
-                        let bit = byte >> (u8::BITS as usize - 1 - dx) & 0x1;
                         let idx = coord_y * DISPLAY_WIDTH + coord_x;
+                        let display_bit = self.display_bus[idx];
 
                         // Collided if any corresponding sprite and display bits are HIGH (bitwise AND)
-                        self.v_reg[0xF] |= self.display_bus[idx] as u8 & bit;
-                        self.display_bus[idx] = (self.display_bus[idx] as u8 ^ bit) != 0;
+                        self.v_reg[0xF] |= (self.display_bus[idx] & *bit) as u8;
+                        self.display_bus.set(idx, display_bit ^ *bit);
                     }
                 }
             }
@@ -335,10 +339,16 @@ impl Chip8 {
             }
             // FX0A - LD Vx, K
             (0xF, x, 0x0, 0xA) => {
-                // TODO: Better input handling (Most recently pressed key? Listen for input?)
-                //       instead of reading input bus and defaulting to pressed key with lowest index
-                if let Some(k_idx) = self.input_bus.iter().position(|key_down| *key_down) {
-                    self.v_reg[x as usize] = k_idx as u8;
+                // Randomly select a pressed key instead of one with the lowest index; avoids having
+                // a key always taking precedence over another when both are simulatneously pressed
+                let rand = fastrand::usize(0..NUM_KEYS);
+                if let Some(k_idx) = self
+                    .input_bus
+                    .iter()
+                    .skip(rand)
+                    .position(|key_down| *key_down)
+                {
+                    self.v_reg[x as usize] = (rand + k_idx) as u8;
                 } else {
                     // Block execution (no-op and repeat instr next cycle) until input detected
                     incr_pc = false;
@@ -366,10 +376,11 @@ impl Chip8 {
             //           [I + 2], D0(Vx)
             (0xF, x, 0x3, 0x3) => {
                 let vx = self.v_reg[x as usize];
-                let (d2, d1, d0) = (vx / u8::pow(10, 2), (vx / 10) % 10, vx % 10);
-                self.memory[self.i_reg as usize] = d2;
-                self.memory[(self.i_reg + 1) as usize] = d1;
-                self.memory[(self.i_reg + 2) as usize] = d0;
+                // Extracts the n-th decimal digit (inline? https://godbolt.org/z/scffbPj7s)
+                let d = |val: u8, n: usize| val / u8::pow(10, n as u32) % 10;
+                self.memory[self.i_reg as usize] = d(vx, 2);
+                self.memory[(self.i_reg + 1) as usize] = d(vx, 1);
+                self.memory[(self.i_reg + 2) as usize] = d(vx, 0);
             }
             // FX55 - LD [I], V0
             //           [I + 1], V1
@@ -404,20 +415,17 @@ impl Chip8 {
         }
     }
 
-    pub fn receive_input(&mut self, msg: Option<InputMsg>) -> Option<InputMsg> {
-        msg.inspect(|input| {
-            self.input_bus[input.keycode() as usize] = match input.key_state() {
-                KeyState::Up => false,
-                KeyState::Down => true,
-            }
-        })
+    pub fn receive_input(&mut self, msg: Option<InputMsg>) {
+        if let Some(input) = msg {
+            self.input_bus = input;
+        }
     }
 
     pub fn transmit_audio(&self) -> bool {
         self.sound_timer > 0
     }
 
-    pub fn transmit_frame(&self) -> &[bool; DISPLAY_WIDTH * DISPLAY_HEIGHT] {
-        &self.display_bus
+    pub fn transmit_frame(&self) -> &BitSlice<usize> {
+        self.display_bus.as_bitslice()
     }
 }

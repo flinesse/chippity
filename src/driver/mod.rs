@@ -1,56 +1,65 @@
-use modular_bitfield::{
-    bitfield,
-    specifiers::{B3, B4},
-    BitfieldSpecifier,
-};
+use bitvec::{slice::BitSlice, BitArr};
 
-use crate::chip8::{DISPLAY_HEIGHT, DISPLAY_WIDTH};
+use crate::chip8::NUM_KEYS;
 
-//    My custom CHIP-8 key input message format:
+pub const KEY_UP: bool = false;
+pub const KEY_DOWN: bool = true;
+pub const PX_OFF: bool = false;
+pub const PX_ON: bool = true;
+
+// A 16-bit CHIP-8 input message representing the incoming, updated key states
+// where the nth bit corresponds to the (n as hex) key status
 //
-//   <-- msb                                                     lsb -->
-//    +-----------------------+-------+-------------------------------+
-//    |        unused         | state |            keycode            |
-//    |       bits 5-7        | bit 4 |           bits 0-3            |
-//    +-----------------------+-------+-------------------------------+
-#[bitfield]
-#[repr(u8)]
-pub struct InputMsg {
-    #[skip(setters)]
-    pub keycode: B4,
-    #[skip(setters)]
-    #[bits = 1]
-    pub key_state: KeyState,
-    #[skip]
-    __: B3,
-}
-
-#[derive(BitfieldSpecifier)]
-pub enum KeyState {
-    Up,
-    Down,
-}
+//   Example: 0b1000_0001_0000_1101
+//         => keys 0, 1, 3, 8, and F are in the down state
+//            and all other keys in the up state
+//
+pub type InputMsg = BitArr!(for NUM_KEYS);
 
 // Model input device (e.g. keypad, keyboard, touchscreen, etc.) interfacing with our CHIP-8 system
 pub trait InputDevice {
-    fn send_input(&self) -> Option<InputMsg>;
+    fn device_info(&self) -> InputInfo;
+
+    fn handle_inputs(&mut self);
+
+    fn send_inputs(&self) -> Option<InputMsg>;
 }
 
 // Model display device (e.g. UI library window, physical screen, etc.) interfacing with our CHIP-8 system
 pub trait DisplayDevice {
-    fn receive_frame(&self, framebuf: &[bool; DISPLAY_WIDTH * DISPLAY_HEIGHT]);
+    fn device_info(&self) -> DisplayInfo;
 
-    fn drive_display(&self);
+    fn receive_frame(&mut self, frame: &BitSlice<usize>);
+
+    fn drive_display(&mut self);
 }
 
 // Model audio device (e.g. audio drivers, beeper, etc.) interfacing with our CHIP-8 system
 pub trait AudioDevice {
-    fn receive_signal(&self, data: bool);
+    fn device_info(&self) -> AudioInfo;
 
-    fn play_sound(&self);
+    fn receive_signal(&mut self, data: bool);
+
+    fn play_sound(&mut self);
+}
+
+#[derive(Clone, Copy)]
+pub enum InputInfo {
+    None,
+}
+
+#[derive(Clone, Copy)]
+pub enum DisplayInfo {
+    None,
+}
+
+#[derive(Clone, Copy)]
+pub enum AudioInfo {
+    None,
 }
 
 // Empty device -- puts `/dev/null` into perspective
+#[derive(Clone, Copy)]
 pub enum NullDevice {
     Input,
     Display,
@@ -58,21 +67,31 @@ pub enum NullDevice {
 }
 
 impl InputDevice for NullDevice {
-    fn send_input(&self) -> Option<InputMsg> {
+    fn device_info(&self) -> InputInfo {
+        InputInfo::None
+    }
+    fn handle_inputs(&mut self) {}
+    fn send_inputs(&self) -> Option<InputMsg> {
         None
     }
 }
 
 impl DisplayDevice for NullDevice {
-    fn receive_frame(&self, _framebuf: &[bool; DISPLAY_WIDTH * DISPLAY_HEIGHT]) {}
-    fn drive_display(&self) {
-        eprintln!(); // TODO
+    fn device_info(&self) -> DisplayInfo {
+        DisplayInfo::None
+    }
+    fn receive_frame(&mut self, _frame: &BitSlice<usize>) {}
+    fn drive_display(&mut self) {
+        eprintln!("Nothing to display to!");
     }
 }
 
 impl AudioDevice for NullDevice {
-    fn receive_signal(&self, _data: bool) {}
-    fn play_sound(&self) {
-        eprintln!(); // TODO
+    fn device_info(&self) -> AudioInfo {
+        AudioInfo::None
+    }
+    fn receive_signal(&mut self, _data: bool) {}
+    fn play_sound(&mut self) {
+        eprintln!("Nothing to play audio through!");
     }
 }

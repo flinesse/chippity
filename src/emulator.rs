@@ -1,45 +1,38 @@
-use crate::chip8::Chip8;
-use crate::driver::{AudioDevice, DisplayDevice, InputDevice, NullDevice};
+use crate::{
+    chip8::Chip8,
+    frontend::{Audio, Display, Input},
+};
 
-const NULL_INPUT: NullDevice = NullDevice::Input;
-const NULL_DISPLAY: NullDevice = NullDevice::Display;
-const NULL_SPEAKER: NullDevice = NullDevice::Audio;
+const DEFAULT_CLOCK_FREQ: f64 = 960.0; // TODO
 
-pub struct Emulator<'i, 'd, 'a> {
-    // The system we're emulating -- CHIP-8
+// A CHIP-8 emulator
+pub struct Emulator<'a> {
+    // The (guest) system being emulated
     system: Chip8,
-
-    input_device: &'i dyn InputDevice,
-    display: &'d dyn DisplayDevice,
-    speaker: &'a dyn AudioDevice,
+    // base clock speed the emulator
+    clock_rate: f64,
+    // --- Peripherals ---
+    input: Input<'a>,
+    display: Display<'a>,
+    audio: Audio<'a>,
 }
 
-impl<'i, 'd, 'a> Emulator<'i, 'd, 'a> {
-    pub fn new() -> Emulator<'i, 'd, 'a> {
-        Emulator::default()
-    }
+impl<'a> Emulator<'a> {
+    // pub fn new() -> Emulator {
+    //     Emulator::default()
+    // }
 
-    pub fn with_peripherals(
-        input: &'i dyn InputDevice,
-        display: &'d dyn DisplayDevice,
-        audio: &'a dyn AudioDevice,
-    ) -> Emulator<'i, 'd, 'a> {
+    pub fn with_peripherals<'b: 'a>(
+        input: Input<'b>,
+        display: Display<'b>,
+        audio: Audio<'b>,
+    ) -> Emulator<'a> {
         Emulator {
             system: Chip8::new(),
-            input_device: input,
-            display: display,
-            speaker: audio,
-        }
-    }
-}
-
-impl<'i, 'd, 'a> Default for Emulator<'i, 'd, 'a> {
-    fn default() -> Emulator<'i, 'd, 'a> {
-        Emulator {
-            system: Chip8::new(),
-            input_device: &NULL_INPUT,
-            display: &NULL_DISPLAY,
-            speaker: &NULL_SPEAKER,
+            clock_rate: DEFAULT_CLOCK_FREQ,
+            input,
+            display,
+            audio,
         }
     }
 }
