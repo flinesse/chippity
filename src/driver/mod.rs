@@ -1,3 +1,5 @@
+pub mod minifb;
+
 use bitvec::{slice::BitSlice, BitArr};
 
 use crate::chip8::NUM_KEYS;
@@ -46,11 +48,13 @@ pub trait AudioDevice {
 
 #[derive(Clone, Copy)]
 pub enum InputInfo {
+    Minifb,
     None,
 }
 
 #[derive(Clone, Copy)]
 pub enum DisplayInfo {
+    Minifb,
     None,
 }
 
