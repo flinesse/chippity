@@ -1,6 +1,7 @@
 use bitvec::{slice::BitSlice, BitArr};
 
 use crate::chip8::NUM_KEYS;
+use crate::emulator::Signal;
 
 pub const KEY_UP: bool = false;
 pub const KEY_DOWN: bool = true;
@@ -20,7 +21,7 @@ pub type InputMsg = BitArr!(for NUM_KEYS);
 pub trait InputDevice {
     fn device_info(&self) -> InputInfo;
 
-    fn handle_inputs(&mut self);
+    fn handle_inputs(&mut self) -> Signal;
 
     fn send_inputs(&self) -> Option<InputMsg>;
 }
@@ -58,7 +59,7 @@ pub enum AudioInfo {
     None,
 }
 
-// Empty device -- puts `/dev/null` into perspective
+// Model empty device -- puts `/dev/null` into perspective
 #[derive(Clone, Copy)]
 pub enum NullDevice {
     Input,
@@ -70,7 +71,9 @@ impl InputDevice for NullDevice {
     fn device_info(&self) -> InputInfo {
         InputInfo::None
     }
-    fn handle_inputs(&mut self) {}
+    fn handle_inputs(&mut self) -> Signal {
+        Signal::None
+    }
     fn send_inputs(&self) -> Option<InputMsg> {
         None
     }

@@ -4,6 +4,7 @@ use bitvec::{bitarr, order::Msb0, slice::BitSlice, view::BitView, BitArr};
 use smallvec::SmallVec;
 
 use crate::driver::InputMsg;
+use crate::emulator;
 use instruction::Instruction;
 
 //    CHIP-8 Virtual Machine memory layout:
@@ -39,6 +40,7 @@ use instruction::Instruction;
 const RAM_SIZE: usize = 4096;
 const RAM_START: u16 = 0x000; // Starting addr of RAM
 const ROM_START: u16 = 0x200; // Starting addr of CHIP-8 programs
+const ROM_END: u16 = 0xFFF; // Upper bounds addr of CHIP-8 programs (== RAM_SIZE)
 const STACK_SIZE: usize = 12;
 const NUM_DATA_REGS: usize = 16;
 const PC_STEP: u16 = 2; // mem::size_of::<Instruction>() / chip8_addressable_unit = 2
@@ -141,24 +143,32 @@ impl Chip8 {
     }
 
     pub fn load_rom(&mut self, data: &[u8]) {
+        let rom_size = data.len();
+        if rom_size > (ROM_END - ROM_START) as usize {
+            panic!("Insufficient memory: invalid ROM");
+        }
+
         let start = ROM_START as usize;
-        let end = (ROM_START as usize) + data.len();
+        let end = (ROM_START as usize) + rom_size;
         self.memory[start..end].copy_from_slice(data);
     }
 
-    pub fn tick_timers(&mut self) {
+    pub fn tick_timers(&mut self) -> emulator::Signal {
         if self.delay_timer > 0 {
             self.delay_timer -= 1;
         }
         if self.sound_timer > 0 {
             self.sound_timer -= 1;
+            emulator::Signal::SoundAudio
+        } else {
+            emulator::Signal::None
         }
     }
 
-    pub fn fetch_instruction(&mut self) -> Instruction {
+    pub fn fetch_instruction(&self) -> Instruction {
         // Program Counter is monotonically non-decreasing starting at 0x200;
         // it is up to the ROM to ensure that the PC remains within valid bounds
-        if self.pc < ROM_START || self.pc >= (RAM_SIZE as u16) {
+        if self.pc < ROM_START || self.pc >= ROM_END {
             panic!("Segfault: invalid ROM");
         }
 
@@ -169,15 +179,19 @@ impl Chip8 {
         Instruction::from_bytes([lb, hb])
     }
 
-    pub fn exec_instruction(&mut self, instr: Instruction) {
+    pub fn exec_instruction(&mut self, instr: Instruction) -> emulator::Signal {
         // Whether to step our PC at the end of cycle - true; false if any jumps are issued
         let mut incr_pc = true;
+        // I/O ret code
+        let mut status = emulator::Signal::None;
 
         // Decode and excute instruction
         match (instr.get_o(), instr.get_x(), instr.get_y(), instr.get_n()) {
             // 00E0 - CLRS
             (0x0, 0x0, 0xE, 0x0) => {
                 self.display_bus.fill(false);
+
+                status = emulator::Signal::RefreshDisplay;
             }
             // 00EE - RET
             (0x0, 0x0, 0xE, 0xE) => {
@@ -188,7 +202,7 @@ impl Chip8 {
             // 0NNN - SYSC addr (Ignored by modern interpreters)
             (0x0, _n1, _n2, _n3) => {
                 eprintln!(
-                    "Encountered unsupported instruction: {:#04X}",
+                    "Encountered unsupported instruction - {:#04X}",
                     u16::from(instr)
                 );
             }
@@ -318,6 +332,8 @@ impl Chip8 {
                         self.display_bus.set(idx, display_bit ^ *bit);
                     }
                 }
+
+                status = emulator::Signal::RefreshDisplay;
             }
             // EX9E - SKP Vx
             (0xE, x, 0x9, 0xE) => {
@@ -404,7 +420,7 @@ impl Chip8 {
             }
             (_, _, _, _) => {
                 panic!(
-                    "Encountered unrecognized instruction: {:#04X}",
+                    "Encountered unrecognized instruction - {:#04X}: invalid ROM",
                     u16::from(instr)
                 );
             }
@@ -413,6 +429,8 @@ impl Chip8 {
         if incr_pc {
             self.pc += PC_STEP;
         }
+
+        status
     }
 
     pub fn receive_input(&mut self, msg: Option<InputMsg>) {
@@ -421,6 +439,7 @@ impl Chip8 {
         }
     }
 
+    // 1-bit sound channel
     pub fn transmit_audio(&self) -> bool {
         self.sound_timer > 0
     }
