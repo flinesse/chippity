@@ -97,14 +97,16 @@ impl InputDevice for Minifb {
 }
 
 impl DisplayDevice for Minifb {
-    fn receive_frame(&mut self, frame: &BitSlice<usize>) {
+    fn receive_frame(&mut self, frame: &BitSlice<usize>) -> &mut dyn DisplayDevice {
         frame
             .iter()
             .enumerate()
             .for_each(|(idx, pixel)| match *pixel {
                 PX_OFF => self.framebuf[idx] = PX_OFF_COLOR,
                 PX_ON => self.framebuf[idx] = PX_ON_COLOR,
-            })
+            });
+
+        self
     }
 
     fn drive_display(&mut self) {

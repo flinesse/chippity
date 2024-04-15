@@ -38,7 +38,7 @@ use instruction::Instruction;
 //    Instead, it is common to store font data representing the hexadecimal digits there.
 
 const RAM_SIZE: usize = 4096;
-const RAM_START: u16 = 0x000; // Starting addr of RAM
+const FONT_START: u16 = 0x000; // Starting addr of fonts (== RAM_START)
 const ROM_START: u16 = 0x200; // Starting addr of CHIP-8 programs
 const ROM_END: u16 = 0xFFF; // Upper bounds addr of CHIP-8 programs (== RAM_SIZE)
 const STACK_SIZE: usize = 12;
@@ -138,7 +138,7 @@ impl Chip8 {
 
     fn load_fonts(&mut self) {
         for (i, font) in FONT_SPRITES.iter().flatten().enumerate() {
-            self.memory[(RAM_START as usize) + i] = *font;
+            self.memory[(FONT_START as usize) + i] = *font;
         }
     }
 
@@ -384,8 +384,9 @@ impl Chip8 {
             }
             // FX29 - LEA I, F(Vx)
             (0xF, x, 0x2, 0x9) => {
-                // Address for font sprite representing hex digit '{Vx}' = Vx * bytes_per_font_sprite
-                self.i_reg = (self.v_reg[x as usize] as u16) * (FONT_PX_HEIGHT as u16);
+                // Address for font sprite representing hex digit '{Vx}'
+                //             = FONT_START + Vx * bytes_per_font_sprite
+                self.i_reg = FONT_START + (self.v_reg[x as usize] as u16) * (FONT_PX_HEIGHT as u16);
             }
             // FX33 - LD [I], D2(Vx)
             //           [I + 1], D1(Vx)
@@ -433,6 +434,7 @@ impl Chip8 {
         status
     }
 
+    // 16-bit input key state
     pub fn receive_input(&mut self, msg: Option<InputMsg>) {
         if let Some(input) = msg {
             self.input_bus = input;
@@ -444,6 +446,7 @@ impl Chip8 {
         self.sound_timer > 0
     }
 
+    // 2048 (64x32) bit display out
     pub fn transmit_frame(&self) -> &BitSlice<usize> {
         self.display_bus.as_bitslice()
     }

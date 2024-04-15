@@ -5,11 +5,6 @@ use bitvec::{slice::BitSlice, BitArr};
 use crate::chip8::NUM_KEYS;
 use crate::emulator::Signal;
 
-pub const KEY_UP: bool = false;
-pub const KEY_DOWN: bool = true;
-pub const PX_OFF: bool = false;
-pub const PX_ON: bool = true;
-
 // A 16-bit CHIP-8 input message representing the incoming, updated key states
 // where the nth bit corresponds to the (n as hex) key status
 //
@@ -18,6 +13,9 @@ pub const PX_ON: bool = true;
 //            and all other keys in the up state
 //
 pub type InputMsg = BitArr!(for NUM_KEYS);
+
+pub const KEY_UP: bool = false;
+pub const KEY_DOWN: bool = true;
 
 // Model input device (e.g. keypad, keyboard, touchscreen, etc.) interfacing with our CHIP-8 system
 pub trait InputDevice {
@@ -28,11 +26,14 @@ pub trait InputDevice {
     fn send_inputs(&self) -> Option<InputMsg>;
 }
 
+pub const PX_OFF: bool = false;
+pub const PX_ON: bool = true;
+
 // Model display device (e.g. UI library window, physical screen, etc.) interfacing with our CHIP-8 system
 pub trait DisplayDevice {
     fn device_info(&self) -> DisplayInfo;
 
-    fn receive_frame(&mut self, frame: &BitSlice<usize>);
+    fn receive_frame(&mut self, frame: &BitSlice<usize>) -> &mut dyn DisplayDevice;
 
     fn drive_display(&mut self);
 }
@@ -41,7 +42,7 @@ pub trait DisplayDevice {
 pub trait AudioDevice {
     fn device_info(&self) -> AudioInfo;
 
-    fn receive_signal(&mut self, data: bool);
+    fn receive_signal(&mut self, data: bool) -> &mut dyn AudioDevice;
 
     fn play_sound(&mut self);
 }
@@ -87,7 +88,9 @@ impl DisplayDevice for NullDevice {
     fn device_info(&self) -> DisplayInfo {
         DisplayInfo::None
     }
-    fn receive_frame(&mut self, _frame: &BitSlice<usize>) {}
+    fn receive_frame(&mut self, _frame: &BitSlice<usize>) -> &mut dyn DisplayDevice {
+        self
+    }
     fn drive_display(&mut self) {
         eprintln!("Nothing to display to!");
     }
@@ -97,7 +100,9 @@ impl AudioDevice for NullDevice {
     fn device_info(&self) -> AudioInfo {
         AudioInfo::None
     }
-    fn receive_signal(&mut self, _data: bool) {}
+    fn receive_signal(&mut self, _data: bool) -> &mut dyn AudioDevice {
+        self
+    }
     fn play_sound(&mut self) {
         eprintln!("Nothing to play audio through!");
     }
