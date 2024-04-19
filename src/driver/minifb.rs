@@ -9,12 +9,15 @@ use crate::{
 
 // minifb::Window pixels use ARGB encoding;
 // alpha-channel (MSB) is ignored => 0RGB
-const PX_ON_COLOR: u32 = 0xE0DEF4;
 const PX_OFF_COLOR: u32 = 0x1E1C2D;
+const PX_ON_COLOR: u32 = 0xE0DEF4;
 
 pub struct Minifb {
+    // GUI window
     window: minifb::Window,
+    // Auxiliary frame buffer to convert pixels to 32-bit format expected by minifb::Window
     framebuf: [u32; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+    // Tx input buffer
     keybuf: BitArr!(for NUM_KEYS),
 }
 
@@ -27,11 +30,11 @@ impl Minifb {
                 DISPLAY_HEIGHT,
                 minifb::WindowOptions {
                     resize: true,
-                    scale: minifb::Scale::FitScreen,
+                    scale: minifb::Scale::X16,
                     ..Default::default()
                 },
             )
-            .unwrap(),
+            .expect("GUI window creation failed"),
 
             framebuf: [0; DISPLAY_WIDTH * DISPLAY_HEIGHT],
             keybuf: bitarr![0; NUM_KEYS],
@@ -43,13 +46,13 @@ impl InputDevice for Minifb {
     //
     //    Keyboard                   CHIP-8
     //    +---+---+---+---+          +---+---+---+---+
-    //    | 4 | 5 | 6 | 7 |          | 1 | 2 | 3 | C |
+    //    | 1 | 2 | 3 | 4 |          | 1 | 2 | 3 | C |
     //    +---+---+---+---+          +---+---+---+---+
-    //    | R | T | Y | U |          | 4 | 5 | 6 | D |
+    //    | Q | W | E | R |          | 4 | 5 | 6 | D |
     //    +---+---+---+---+    =>    +---+---+---+---+
-    //    | F | G | H | J |          | 7 | 8 | 9 | E |
+    //    | A | S | D | F |          | 7 | 8 | 9 | E |
     //    +---+---+---+---+          +---+---+---+---+
-    //    | V | B | N | M |          | A | 0 | B | F |
+    //    | Z | X | C | V |          | A | 0 | B | F |
     //    +---+---+---+---+          +---+---+---+---+
     //
     fn handle_inputs(&mut self) -> Signal {
@@ -61,22 +64,22 @@ impl InputDevice for Minifb {
         }
 
         self.window.get_keys().iter().for_each(|key| match key {
-            minifb::Key::Key4 => self.keybuf.set(0x1, KEY_DOWN),
-            minifb::Key::Key5 => self.keybuf.set(0x2, KEY_DOWN),
-            minifb::Key::Key6 => self.keybuf.set(0x3, KEY_DOWN),
-            minifb::Key::Key7 => self.keybuf.set(0xC, KEY_DOWN),
-            minifb::Key::R => self.keybuf.set(0x4, KEY_DOWN),
-            minifb::Key::T => self.keybuf.set(0x5, KEY_DOWN),
-            minifb::Key::Y => self.keybuf.set(0x6, KEY_DOWN),
-            minifb::Key::U => self.keybuf.set(0xD, KEY_DOWN),
-            minifb::Key::F => self.keybuf.set(0x7, KEY_DOWN),
-            minifb::Key::G => self.keybuf.set(0x8, KEY_DOWN),
-            minifb::Key::H => self.keybuf.set(0x9, KEY_DOWN),
-            minifb::Key::J => self.keybuf.set(0xE, KEY_DOWN),
-            minifb::Key::V => self.keybuf.set(0xA, KEY_DOWN),
-            minifb::Key::B => self.keybuf.set(0x0, KEY_DOWN),
-            minifb::Key::N => self.keybuf.set(0xB, KEY_DOWN),
-            minifb::Key::M => self.keybuf.set(0xF, KEY_DOWN),
+            minifb::Key::Key1 => self.keybuf.set(0x1, KEY_DOWN),
+            minifb::Key::Key2 => self.keybuf.set(0x2, KEY_DOWN),
+            minifb::Key::Key3 => self.keybuf.set(0x3, KEY_DOWN),
+            minifb::Key::Key4 => self.keybuf.set(0xC, KEY_DOWN),
+            minifb::Key::Q => self.keybuf.set(0x4, KEY_DOWN),
+            minifb::Key::W => self.keybuf.set(0x5, KEY_DOWN),
+            minifb::Key::E => self.keybuf.set(0x6, KEY_DOWN),
+            minifb::Key::R => self.keybuf.set(0xD, KEY_DOWN),
+            minifb::Key::A => self.keybuf.set(0x7, KEY_DOWN),
+            minifb::Key::S => self.keybuf.set(0x8, KEY_DOWN),
+            minifb::Key::D => self.keybuf.set(0x9, KEY_DOWN),
+            minifb::Key::F => self.keybuf.set(0xE, KEY_DOWN),
+            minifb::Key::Z => self.keybuf.set(0xA, KEY_DOWN),
+            minifb::Key::X => self.keybuf.set(0x0, KEY_DOWN),
+            minifb::Key::C => self.keybuf.set(0xB, KEY_DOWN),
+            minifb::Key::V => self.keybuf.set(0xF, KEY_DOWN),
             _ => (),
         });
 

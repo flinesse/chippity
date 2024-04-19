@@ -66,7 +66,7 @@ const FONT_SPRITES: [[u8; FONT_PX_HEIGHT]; 16] = [
 ];
 const FONT_PX_HEIGHT: usize = 5;
 
-pub const TIMER_FREQ: usize = 60;
+pub const TIMER_FREQ: f32 = 60.0;
 pub const DISPLAY_WIDTH: usize = 64;
 pub const DISPLAY_HEIGHT: usize = 32;
 pub const NUM_KEYS: usize = 16;
@@ -80,8 +80,6 @@ pub struct Chip8 {
     //   "The original RCA 1802 version allowed up to 12 levels of
     //   nesting; _modern implementations may wish to allocate more_"
     stack: SmallVec<[u16; STACK_SIZE]>,
-    // Stack Pointer
-    sp: u16,
     // I - the address register
     i_reg: u16,
     // V - general purpose data registers
@@ -123,7 +121,6 @@ impl Chip8 {
             memory: [0; RAM_SIZE],
             pc: ROM_START,
             stack: SmallVec::new(),
-            sp: 0,
             i_reg: 0,
             v_reg: [0; NUM_DATA_REGS],
             display_bus: bitarr![0; DISPLAY_WIDTH * DISPLAY_HEIGHT],
@@ -180,10 +177,17 @@ impl Chip8 {
     }
 
     pub fn exec_instruction(&mut self, instr: Instruction) -> emulator::Signal {
-        // Whether to step our PC at the end of cycle - true; false if any jumps are issued
+        // Whether to step the PC at the end of cycle - true; false if any jumps are issued
         let mut incr_pc = true;
         // I/O ret code
         let mut status = emulator::Signal::None;
+
+        /*
+        println!(
+            "Instruction: {:X}{:X} {:X}{:X} --- PC: {:X}",
+            instr.get_o(), instr.get_x(), instr.get_y(), instr.get_n(), self.pc,
+        );
+        */
 
         // Decode and excute instruction
         match (instr.get_o(), instr.get_x(), instr.get_y(), instr.get_n()) {
@@ -197,7 +201,6 @@ impl Chip8 {
             (0x0, 0x0, 0xE, 0xE) => {
                 let ret_addr = self.stack.pop().expect("Segfault: invalid ROM");
                 self.pc = ret_addr;
-                incr_pc = false;
             }
             // 0NNN - SYSC addr (Ignored by modern interpreters)
             (0x0, _n1, _n2, _n3) => {
@@ -276,8 +279,9 @@ impl Chip8 {
             // 8XY6 - SHR Vx {, Vy}; set VF
             //   WARN: There is conflicting info on whether Vx = { Vx >> 1 or Vy >> 1 }
             (0x8, x, _y, 0x6) => {
-                self.v_reg[0xF] = self.v_reg[x as usize] & 0x1;
+                let lsb = self.v_reg[x as usize] & 0x1;
                 self.v_reg[x as usize] >>= 1;
+                self.v_reg[0xF] = lsb;
             }
             // 8XY7 - SUBN Vx, Vy; set VF
             (0x8, x, y, 0x7) => {
@@ -288,8 +292,9 @@ impl Chip8 {
             // 8XYE - SHL Vx {, Vy}; set VF
             //   WARN: There is conflicting info on whether Vx = { Vx << 1 or Vy << 1 }
             (0x8, x, _y, 0xE) => {
-                self.v_reg[0xF] = (self.v_reg[x as usize] >> (u8::BITS - 1)) & 0x1;
+                let msb = (self.v_reg[x as usize] >> (u8::BITS - 1)) & 0x1;
                 self.v_reg[x as usize] <<= 1;
+                self.v_reg[0xF] = msb;
             }
             // 9XY0 - SKNE Vx, Vy
             (0x9, x, y, 0x0) => {
@@ -328,7 +333,7 @@ impl Chip8 {
                         let display_bit = self.display_bus[idx];
 
                         // Collided if any corresponding sprite and display bits are HIGH (bitwise AND)
-                        self.v_reg[0xF] |= (self.display_bus[idx] & *bit) as u8;
+                        self.v_reg[0xF] |= (display_bit & *bit) as u8;
                         self.display_bus.set(idx, display_bit ^ *bit);
                     }
                 }
@@ -394,10 +399,10 @@ impl Chip8 {
             (0xF, x, 0x3, 0x3) => {
                 let vx = self.v_reg[x as usize];
                 // Extracts the n-th decimal digit (inline? https://godbolt.org/z/scffbPj7s)
-                let d = |val: u8, n: usize| val / u8::pow(10, n as u32) % 10;
+                let d = |val, n| val / u8::pow(10, n) % 10;
                 self.memory[self.i_reg as usize] = d(vx, 2);
-                self.memory[(self.i_reg + 1) as usize] = d(vx, 1);
-                self.memory[(self.i_reg + 2) as usize] = d(vx, 0);
+                self.memory[self.i_reg as usize + 1] = d(vx, 1);
+                self.memory[self.i_reg as usize + 2] = d(vx, 0);
             }
             // FX55 - LD [I], V0
             //           [I + 1], V1
@@ -434,19 +439,19 @@ impl Chip8 {
         status
     }
 
-    // 16-bit input key state
+    // Rx 16-bit input key state
     pub fn receive_input(&mut self, msg: Option<InputMsg>) {
         if let Some(input) = msg {
             self.input_bus = input;
         }
     }
 
-    // 1-bit sound channel
+    // Tx 1-bit sound channel
     pub fn transmit_audio(&self) -> bool {
         self.sound_timer > 0
     }
 
-    // 2048 (64x32) bit display out
+    // Tx 2048 (64x32) bit display out
     pub fn transmit_frame(&self) -> &BitSlice<usize> {
         self.display_bus.as_bitslice()
     }

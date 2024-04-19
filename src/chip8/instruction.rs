@@ -14,7 +14,7 @@ use modular_bitfield::{bitfield, specifiers::B4};
 //
 
 // Ordering of `bitfield` is from lsb to msb: https://docs.rs/modular-bitfield/latest/modular_bitfield/index.html#example
-#[bitfield]
+#[bitfield(bits = 16)]
 #[repr(u16)]
 pub struct Instruction {
     #[skip(setters)]
