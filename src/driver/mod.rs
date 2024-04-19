@@ -1,5 +1,6 @@
 pub mod ansiterm;
 pub mod minifb;
+pub mod termion;
 
 use bitvec::{slice::BitSlice, BitArr};
 
@@ -51,18 +52,21 @@ pub trait AudioDevice {
 #[derive(Clone, Copy)]
 pub enum InputInfo {
     Minifb,
+    Termion,
     None,
 }
 
 #[derive(Clone, Copy)]
 pub enum DisplayInfo {
     Minifb,
+    Termion,
     None,
 }
 
 #[derive(Clone, Copy)]
 pub enum AudioInfo {
     AnsiTerm,
+    Termion,
     None,
 }
 
