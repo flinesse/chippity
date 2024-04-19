@@ -66,10 +66,10 @@ const FONT_SPRITES: [[u8; FONT_PX_HEIGHT]; 16] = [
 ];
 const FONT_PX_HEIGHT: usize = 5;
 
-pub const TIMER_FREQ: f32 = 60.0;
 pub const DISPLAY_WIDTH: usize = 64;
 pub const DISPLAY_HEIGHT: usize = 32;
 pub const NUM_KEYS: usize = 16;
+pub const TIMER_FREQ: f32 = 60.0;
 
 pub struct Chip8 {
     // RAM of the CHIP-8 VM

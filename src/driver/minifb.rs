@@ -56,12 +56,12 @@ impl InputDevice for Minifb {
     //    +---+---+---+---+          +---+---+---+---+
     //
     fn handle_inputs(&mut self) -> Signal {
-        let prev_state = self.keybuf;
-        self.keybuf.fill(KEY_UP);
-
         if !self.window.is_open() {
             return Signal::ProgramExit;
         }
+
+        let prev_state = self.keybuf;
+        self.keybuf.fill(KEY_UP);
 
         self.window.get_keys().iter().for_each(|key| match key {
             minifb::Key::Key1 => self.keybuf.set(0x1, KEY_DOWN),

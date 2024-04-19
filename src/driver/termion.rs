@@ -37,8 +37,8 @@ pub struct Termion {
     // Tx input buffer
     keybuf: BitArr!(for NUM_KEYS),
     // Since inputs come as a byte stream, we don't have convenient key up/down
-    // states to relay; having a timer to "expire" key presses will make inputs
-    // more predictable
+    // states to relay; having a timer to "expire" key presses will serve that
+    // purpose and make inputs more predictable
     key_expire: Instant,
 }
 

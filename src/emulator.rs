@@ -37,7 +37,7 @@ where
     audio: &'a RefCell<A>,
 }
 
-const DEFAULT_CLOCK_FREQ: f32 = 600.0;
+pub const DEFAULT_CLOCK_FREQ: f32 = 600.0;
 
 // Emulator I/O signals; this is equivalent to ret codes / interrupts in embedded environments
 // TODO: Could map subcomponent panics to this for better error handling
@@ -126,11 +126,9 @@ where
             // the set clock rate is high enough.
             // TODO: Use a timer crate?
             match (start - master).as_millis() % t_c8timer {
-                0 => {
-                    if tick_next {
-                        event = self.system.tick_timers();
-                        tick_next = false;
-                    }
+                0 if tick_next => {
+                    event = self.system.tick_timers();
+                    tick_next = false;
                 }
                 _ => tick_next = true,
             }
