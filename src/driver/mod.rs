@@ -1,3 +1,4 @@
+pub mod ansiterm;
 pub mod minifb;
 
 use bitvec::{slice::BitSlice, BitArr};
@@ -61,11 +62,12 @@ pub enum DisplayInfo {
 
 #[derive(Clone, Copy)]
 pub enum AudioInfo {
+    AnsiTerm,
     None,
 }
 
 // Model empty device -- puts `/dev/null` into perspective
-#[derive(Clone, Copy)]
+#[allow(dead_code)]
 pub enum NullDevice {
     Input,
     Display,

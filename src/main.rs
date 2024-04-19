@@ -4,7 +4,7 @@ mod emulator;
 
 use std::cell::RefCell;
 
-use driver::{minifb::Minifb, NullDevice};
+use driver::{ansiterm::AnsiTerm, minifb::Minifb};
 use emulator::*;
 
 fn main() {
@@ -22,11 +22,11 @@ fn main() {
 
     // Setup frontend
     let minifb = RefCell::new(Minifb::new("test"));
-    let f_audio = RefCell::new(NullDevice::Audio);
+    let ansiterm = RefCell::new(AnsiTerm);
 
     // Instantiate CHIP-8 emulator and execute game loop
-    let mut emu = Emulator::with_peripherals(&minifb, &minifb, &f_audio);
-    emu.set_clock_speed(8.0);
-    emu.load_program("roms/test/3-corax+.ch8");
+    let mut emu = Emulator::with_peripherals(&minifb, &minifb, &ansiterm);
+    emu.set_clock_speed(480.0);
+    emu.load_program("roms/br8kout.ch8");
     emu.run();
 }
