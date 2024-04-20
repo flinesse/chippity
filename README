@@ -1,0 +1,29 @@
+USAGE:
+    cargo run -- [OPTIONS] [ROM]
+
+ARGS:
+    <ROM>    Filepath to the CHIP-8 ROM to be read by the emulator. A list of
+             ROMs released to the public domain can be found at:
+                 - https://zophar.net/pdroms/chip8/chip-8-games-pack.html
+                 - https://johnearnest.github.io/chip8Archive/?sort=platform
+
+OPTIONS:
+    -h, --help          Print this help message.
+    -g, --gui           GUI mode — run this program in a native window.
+    -t, --tui           TUI mode — run this program in the terminal. (default)
+    -a                  Use the native audio host API. You may want to enable
+                          this if your terminal emulator does not support the
+                          BEL control code. Enabled by default with --gui.
+    -f, --freq=NUM      Set the clock rate of the emulator (Hz) to uint NUM
+                          in the range 1–2000. (default: 720)
+
+KEYMAP:
+    +---+---+---+---+
+    | 1 | 2 | 3 | 4 |
+    +---+---+---+---+
+    | Q | W | E | R |
+    +---+---+---+---+
+    | A | S | D | F |
+    +---+---+---+---+
+    | Z | X | C | V |
+    +---+---+---+---+
