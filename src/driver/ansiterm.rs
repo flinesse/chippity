@@ -11,7 +11,7 @@ impl AudioDevice for AnsiTerm {
         self
     }
 
-    fn play_sound(&mut self) {}
+    fn play_audio(&mut self) {}
 
     fn device_info(&self) -> AudioInfo {
         AudioInfo::AnsiTerm

@@ -37,7 +37,7 @@ where
     audio: &'a RefCell<A>,
 }
 
-pub const DEFAULT_CLOCK_FREQ: f32 = 600.0;
+pub const DEFAULT_CLOCK_FREQ: f32 = 720.0;
 
 // Emulator I/O signals; this is equivalent to ret codes / interrupts in embedded environments
 // TODO: Could map subcomponent panics to this for better error handling
@@ -138,7 +138,7 @@ where
                 self.audio
                     .borrow_mut()
                     .receive_signal(self.system.transmit_audio())
-                    .play_sound();
+                    .play_audio();
             }
 
             let cycle_elapsed = start.elapsed();

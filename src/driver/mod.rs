@@ -1,5 +1,6 @@
 pub mod ansiterm;
 pub mod minifb;
+pub mod rodio;
 pub mod termion;
 
 use bitvec::{slice::BitSlice, BitArr};
@@ -46,7 +47,7 @@ pub trait AudioDevice {
 
     fn receive_signal(&mut self, data: bool) -> &mut dyn AudioDevice;
 
-    fn play_sound(&mut self);
+    fn play_audio(&mut self);
 }
 
 #[derive(Clone, Copy)]
@@ -67,6 +68,7 @@ pub enum DisplayInfo {
 pub enum AudioInfo {
     AnsiTerm,
     Termion,
+    Rodio,
     None,
 }
 
@@ -109,7 +111,7 @@ impl AudioDevice for NullDevice {
     fn receive_signal(&mut self, _data: bool) -> &mut dyn AudioDevice {
         self
     }
-    fn play_sound(&mut self) {
+    fn play_audio(&mut self) {
         eprintln!("Nothing to play audio through!");
     }
 }

@@ -6,7 +6,7 @@ mod emulator;
 use std::cell::RefCell;
 use std::path::Path;
 
-use driver::{ansiterm::AnsiTerm, minifb::Minifb, termion::Termion};
+use driver::{minifb::Minifb, rodio::Rodio, termion::Termion};
 use emulator::Emulator;
 
 // Command line arguments
@@ -118,21 +118,35 @@ fn main() -> Result<(), lexopt::Error> {
     // Lazily evaluate our emulator frontend
     let termion = || RefCell::new(Termion::new());
     let minifb = || RefCell::new(Minifb::new(program_name.to_str().unwrap()));
-    let ansiterm = RefCell::new(AnsiTerm);
+    let rodio = || RefCell::new(Rodio::new());
 
-    if args.gui {
-        let gui = minifb();
-        // TODO: native audio
-        let mut emu = Emulator::with_peripherals(&gui, &gui, &ansiterm);
-        emu.set_clock_speed(args.emu_clock_hz as f32);
-        emu.load_program(&args.rom);
-        emu.run();
-    } else {
-        let tui = termion();
-        let mut emu = Emulator::with_peripherals(&tui, &tui, &tui);
-        emu.set_clock_speed(args.emu_clock_hz as f32);
-        emu.load_program(&args.rom);
-        emu.run();
+    match (args.gui, args.native_audio) {
+        (false, false) => {
+            let tui = termion();
+
+            let mut emu = Emulator::with_peripherals(&tui, &tui, &tui);
+            emu.set_clock_speed(args.emu_clock_hz as f32);
+            emu.load_program(&args.rom);
+            emu.run();
+        }
+        (false, true) => {
+            let tui = termion();
+            let audio = rodio();
+
+            let mut emu = Emulator::with_peripherals(&tui, &tui, &audio);
+            emu.set_clock_speed(args.emu_clock_hz as f32);
+            emu.load_program(&args.rom);
+            emu.run();
+        }
+        (true, _) => {
+            let gui = minifb();
+            let audio = rodio();
+
+            let mut emu = Emulator::with_peripherals(&gui, &gui, &audio);
+            emu.set_clock_speed(args.emu_clock_hz as f32);
+            emu.load_program(&args.rom);
+            emu.run();
+        }
     }
 
     Ok(())
