@@ -37,9 +37,9 @@ pub struct Termion {
     // Tx input buffer
     keybuf: BitArr!(for NUM_KEYS),
     // Since inputs come as a byte stream, we don't have convenient key up/down
-    // states to relay; having a timer to "expire" key presses will serve that
-    // purpose and make inputs more predictable
-    key_expire: Instant,
+    // states to relay; having corresponding timers to "expire" key presses will
+    // serve that purpose and make inputs more predictable
+    key_expire: [Instant; NUM_KEYS],
 }
 
 impl Termion {
@@ -57,13 +57,34 @@ impl Termion {
             term_size: termion::terminal_size().unwrap(),
             framebuf: String::new(),
             keybuf: bitarr![0; NUM_KEYS],
-            key_expire: Instant::now(),
+            key_expire: [Instant::now(); NUM_KEYS],
         };
 
         write!(t.screen, "{}", termion::cursor::Hide).unwrap();
         t.screen.flush().unwrap();
 
         t
+    }
+
+    #[inline]
+    fn expire_key_presses(&mut self) {
+        for (mut key, timer) in self
+            .keybuf
+            .iter_mut()
+            .zip(self.key_expire.iter_mut())
+            .filter(|(key, timer)| {
+                *key == KEY_DOWN && timer.elapsed().as_millis() >= DEBOUNCE_TIMEOUT as u128
+            })
+        {
+            *key = KEY_UP;
+            *timer = Instant::now();
+        }
+    }
+
+    #[inline]
+    fn set_and_time_key(&mut self, idx: usize) {
+        self.keybuf.set(idx, KEY_DOWN);
+        self.key_expire[idx] = Instant::now();
     }
 }
 
@@ -82,12 +103,7 @@ impl InputDevice for Termion {
     //
     fn handle_inputs(&mut self) -> Signal {
         let prev_state = self.keybuf;
-
-        // Refresh input buffer
-        if self.key_expire.elapsed().as_millis() >= DEBOUNCE_TIMEOUT as u128 {
-            self.keybuf.fill(KEY_UP);
-            self.key_expire = Instant::now();
-        }
+        self.expire_key_presses();
 
         let mut inputs = Vec::new();
         // Drain all inputs from stdin
@@ -96,22 +112,22 @@ impl InputDevice for Termion {
 
         for byte in inputs {
             match byte {
-                b'1' => self.keybuf.set(0x1, KEY_DOWN),
-                b'2' => self.keybuf.set(0x2, KEY_DOWN),
-                b'3' => self.keybuf.set(0x3, KEY_DOWN),
-                b'4' => self.keybuf.set(0xC, KEY_DOWN),
-                b'q' => self.keybuf.set(0x4, KEY_DOWN),
-                b'w' => self.keybuf.set(0x5, KEY_DOWN),
-                b'e' => self.keybuf.set(0x6, KEY_DOWN),
-                b'r' => self.keybuf.set(0xD, KEY_DOWN),
-                b'a' => self.keybuf.set(0x7, KEY_DOWN),
-                b's' => self.keybuf.set(0x8, KEY_DOWN),
-                b'd' => self.keybuf.set(0x9, KEY_DOWN),
-                b'f' => self.keybuf.set(0xE, KEY_DOWN),
-                b'z' => self.keybuf.set(0xA, KEY_DOWN),
-                b'x' => self.keybuf.set(0x0, KEY_DOWN),
-                b'c' => self.keybuf.set(0xB, KEY_DOWN),
-                b'v' => self.keybuf.set(0xF, KEY_DOWN),
+                b'1' => self.set_and_time_key(0x1),
+                b'2' => self.set_and_time_key(0x2),
+                b'3' => self.set_and_time_key(0x3),
+                b'4' => self.set_and_time_key(0xC),
+                b'q' => self.set_and_time_key(0x4),
+                b'w' => self.set_and_time_key(0x5),
+                b'e' => self.set_and_time_key(0x6),
+                b'r' => self.set_and_time_key(0xD),
+                b'a' => self.set_and_time_key(0x7),
+                b's' => self.set_and_time_key(0x8),
+                b'd' => self.set_and_time_key(0x9),
+                b'f' => self.set_and_time_key(0xE),
+                b'z' => self.set_and_time_key(0xA),
+                b'x' => self.set_and_time_key(0x0),
+                b'c' => self.set_and_time_key(0xB),
+                b'v' => self.set_and_time_key(0xF),
                 // Esc (ASCII 0x1B) and ^C (ASCII 0x03) to signal program exit
                 0x03 | 0x1B => {
                     write!(self.screen, "{}", termion::cursor::Show).unwrap();
