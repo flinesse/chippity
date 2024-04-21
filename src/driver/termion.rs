@@ -180,7 +180,7 @@ impl DisplayDevice for Termion {
                     "{}",
                     termion::cursor::Goto(
                         x_offset + 1,
-                        y_offset + (1 + idx / DISPLAY_WIDTH) as u16
+                        y_offset + 1 + (idx / DISPLAY_WIDTH) as u16
                     )
                 )
                 .unwrap();

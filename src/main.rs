@@ -103,6 +103,8 @@ KEYMAP:
 ///  CHIP-8 should be able to run with no peripherals hooked up to it!
 ///
 ///  ```
+///  use driver::NullDevice;
+///
 ///  let f_input = RefCell::new(NullDevice::Input);
 ///  let f_display = RefCell::new(NullDevice::Display);
 ///  let f_audio = RefCell::new(NullDevice::Audio);

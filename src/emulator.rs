@@ -102,7 +102,8 @@ where
             match event {
                 Signal::NewInputs => self.system.receive_input(self.input.borrow().send_inputs()),
                 Signal::ProgramExit => break,
-                _ => (),
+                Signal::None => (),
+                _ => unreachable!(),
             }
 
             // --- CHIP-8 instruction cycle
